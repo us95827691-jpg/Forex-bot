@@ -2,3 +2,5 @@ flask
 requests
 yfinance
 pandas
+python-telegram-bot
+ta
