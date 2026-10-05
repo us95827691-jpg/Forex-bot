@@ -5,7 +5,7 @@ import yfinance as yf
 
 app = Flask('')
 @app.route('/')
-def home(): return "STRICT BOT LIVE + % Target"
+def home(): return "STRICT + POSSIBILITY BOT LIVE"
 def run(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 Thread(target=run).start()
 
@@ -18,7 +18,7 @@ def send(t):
         print(f"SEND: {t}", flush=True)
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": t}, timeout=10)
     except Exception as e:
-        print(f"TG Error {e}", flush=True)
+        print(f"Err {e}", flush=True)
 
 def chk(s, tf):
     try:
@@ -41,34 +41,35 @@ def chk(s, tf):
         sv = m.ewm(span=9).mean().iloc[-1]
         price = c.iloc[-1]
 
-        # ATR se % Target nikalna
+        # Target % ATR se
         tr = (h - l).rolling(14).mean().iloc[-1]
-        atr_perc = (tr / price) * 100
-        # Prediction %
-        target_perc = atr_perc * 1.5
-        if target_perc > 1.0: target_perc = 0.8
-        if target_perc < 0.15: target_perc = 0.20
+        atr_perc = (tr / price) * 100 * 1.5
+        if atr_perc > 0.9: atr_perc = 0.8
+        if atr_perc < 0.15: atr_perc = 0.20
 
-        print(f"{s} {tf} P:{price:.5f} RSI:{rsi:.1f} ATR%:{atr_perc:.3f}", flush=True)
-
+        # Possibility % calculation (RSI + EMA + MACD strength se)
+        # BUY ke liye
         if e20 > e50 and 40 < rsi < 70 and mv > sv:
-            return f"🟢 STRICT BUY {s} {tf}\nPrice: {price:.5f}\nRSI: {rsi:.1f}\n🎯 Target: +{target_perc:.2f}% Up\n📉 SL: -{target_perc/2:.2f}%"
+            base = 60
+            if rsi > 55: base += 5
+            if rsi > 60: base += 5
+            if (mv - sv) > 0.0005: base += 5
+            if base > 82: base = 82
+            up_p = base
+            down_p = 100 - base
+            return f"🟢 STRICT BUY {s} {tf}\nPrice: {price:.5f}\nRSI: {rsi:.1f}\nTarget: +{atr_perc:.2f}%\nUp jane ki possibility: {up_p}%\nDown jane ki possibility: {down_p}%"
 
+        # SELL ke liye
         if e20 < e50 and 30 < rsi < 60 and mv < sv:
-            return f"🔴 STRICT SELL {s} {tf}\nPrice: {price:.5f}\nRSI: {rsi:.1f}\n🎯 Target: -{target_perc:.2f}% Down\n📈 SL: +{target_perc/2:.2f}%"
+            base = 60
+            if rsi < 45: base += 5
+            if rsi < 40: base += 5
+            if (sv - mv) > 0.0005: base += 5
+            if base > 82: base = 82
+            down_p = base
+            up_p = 100 - base
+            return f"🔴 STRICT SELL {s} {tf}\nPrice: {price:.5f}\nRSI: {rsi:.1f}\nTarget: -{atr_perc:.2f}%\nUp jane ki possibility: {up_p}%\nDown jane ki possibility: {down_p}%"
 
     except Exception as e:
         print(f"Err {s} {e}", flush=True)
-    print(f"{s} {tf} -> No Signal", flush=True)
-    return None
-
-send("✅ STRICT + TARGET BOT STARTED\nTarget % prediction ON")
-
-while True:
-    for tf in ["5m","15m"]:
-        for s in SYMBOLS:
-            x = chk(s, tf)
-            if x: send(x)
-            time.sleep(3)
-    print("Sleeping 5 min...", flush=True)
-    time.sleep(300)
+    return None  
