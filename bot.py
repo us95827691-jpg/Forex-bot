@@ -6,7 +6,7 @@ import pandas as pd
 
 app = Flask('')
 @app.route('/')
-def home(): return "MTF Bot Live - Fixed Final"
+def home(): return "MTF Bot Live - Final"
 
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
@@ -27,8 +27,13 @@ def send_msg(text):
 def get_trend(symbol, period, interval):
     try:
         df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
-        if len(df) < 50: return None
-        # FIX for new yfinance
+        if len(df) == 0: return None
+        # Daily ke liye kam candle chahiye
+        if interval == "1d":
+            if len(df) < 40: return None
+        else:
+            if len(df) < 50: return None
+
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         close = df['Close']
@@ -41,9 +46,8 @@ def get_trend(symbol, period, interval):
         delta = close.diff()
         gain = delta.where(delta>0,0).rolling(14).mean().iloc[-1]
         loss = -delta.where(delta<0,0).rolling(14).mean().iloc[-1]
-        # FIX for Series error
-        if isinstance(gain, pd.Series): gain = float(gain.iloc[0] if len(gain)>0 else gain)
-        if isinstance(loss, pd.Series): loss = float(loss.iloc[0] if len(loss)>0 else loss)
+        if isinstance(gain, pd.Series): gain = float(gain.iloc[-1])
+        if isinstance(loss, pd.Series): loss = float(loss.iloc[-1])
 
         rsi = 100 - (100/(1+gain/loss)) if loss!=0 else 50
         price = float(close.iloc[-1])
@@ -56,7 +60,7 @@ def get_trend(symbol, period, interval):
         return None
 
 print("=== MTF BOT STARTING FINAL ===", flush=True)
-send_msg("✅ MTF Bot Started - Final Fixed\nAb signal ayega...")
+send_msg("✅ MTF Bot Started - All Fixed\nAb signal ayega...")
 
 while True:
     print("--- MTF SCANNING ---", flush=True)
@@ -65,9 +69,9 @@ while True:
         t15m = get_trend(sym, "5d", "15m")
         t45m = get_trend(sym, "5d", "30m")
         t1h = get_trend(sym, "5d", "60m")
-        t1d = get_trend(sym, "1mo", "1d")
+        t1d = get_trend(sym, "6mo", "1d") # FIXED 6mo
         if not all([t5m,t15m,t45m,t1h,t1d]):
-            print(f"{name} SKIPPED", flush=True)
+            print(f"{name} SKIPPED - waiting for data", flush=True)
             continue
         trends = [t5m[0], t15m[0], t45m[0], t1h[0], t1d[0]]
         buy_count = trends.count("BUY")
