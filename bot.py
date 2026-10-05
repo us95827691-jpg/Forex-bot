@@ -5,7 +5,7 @@ import yfinance as yf
 
 app = Flask('')
 @app.route('/')
-def home(): return "Strict High Accuracy Bot Live"
+def home(): return "STRICT BOT LIVE + % Target"
 def run(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 Thread(target=run).start()
 
@@ -13,63 +13,62 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 SYMBOLS = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","GC=F"]
 
-def send_msg(t):
+def send(t):
     try:
         print(f"SEND: {t}", flush=True)
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": t}, timeout=10)
     except Exception as e:
         print(f"TG Error {e}", flush=True)
 
-def check(sym, tf):
+def chk(s, tf):
     try:
-        df = yf.Ticker(sym).history(period="5d", interval=tf, auto_adjust=True)
+        df = yf.Ticker(s).history(period="5d", interval=tf, auto_adjust=True)
         if len(df) < 50: return None
         c = df['Close']
-        e20 = c.ewm(span=20).mean()
-        e50 = c.ewm(span=50).mean()
+        h = df['High']
+        l = df['Low']
         
-        # RSI
-        delta = c.diff()
-        gain = delta.where(delta>0,0).rolling(14).mean()
-        loss = -delta.where(delta<0,0).rolling(14).mean()
-        rsi = 100 - (100 / (1 + gain/loss))
+        e20 = c.ewm(span=20).mean().iloc[-1]
+        e50 = c.ewm(span=50).mean().iloc[-1]
         
-        # MACD
-        ema12 = c.ewm(span=12).mean()
-        ema26 = c.ewm(span=26).mean()
-        macd = ema12 - ema26
-        signal = macd.ewm(span=9).mean()
-
+        d = c.diff()
+        g = d.where(d>0,0).rolling(14).mean()
+        ll = -d.where(d<0,0).rolling(14).mean()
+        rsi = (100 - (100/(1+g/ll))).iloc[-1]
+        
+        m = c.ewm(span=12).mean() - c.ewm(span=26).mean()
+        mv = m.iloc[-1]
+        sv = m.ewm(span=9).mean().iloc[-1]
         price = c.iloc[-1]
-        r = rsi.iloc[-1]
-        m = macd.iloc[-1]
-        s = signal.iloc[-1]
-        e20v = e20.iloc[-1]
-        e50v = e50.iloc[-1]
 
-        print(f"{sym} {tf} P:{price:.5f} RSI:{r:.1f} MACD:{m:.5f} Sig:{s:.5f}", flush=True)
+        # ATR se % Target nikalna
+        tr = (h - l).rolling(14).mean().iloc[-1]
+        atr_perc = (tr / price) * 100
+        # Prediction %
+        target_perc = atr_perc * 1.5
+        if target_perc > 1.0: target_perc = 0.8
+        if target_perc < 0.15: target_perc = 0.20
 
-        # STRICT BUY: Uptrend + RSI not overbought + MACD bullish
-        if e20v > e50v and 35 < r < 65 and m > s:
-            return f"🟢 BUY {sym} {tf}\nPrice: {price:.5f}\nRSI: {r:.1f} | EMA Bullish | MACD Bull"
-        # STRICT SELL: Downtrend + RSI not oversold + MACD bearish
-        elif e20v < e50v and 35 < r < 65 and m < s:
-            return f"🔴 SELL {sym} {tf}\nPrice: {price:.5f}\nRSI: {r:.1f} | EMA Bearish | MACD Bear"
-        else:
-            print(f"{sym} {tf} -> No Signal (Condition fail)", flush=True)
-            
+        print(f"{s} {tf} P:{price:.5f} RSI:{rsi:.1f} ATR%:{atr_perc:.3f}", flush=True)
+
+        if e20 > e50 and 40 < rsi < 70 and mv > sv:
+            return f"🟢 STRICT BUY {s} {tf}\nPrice: {price:.5f}\nRSI: {rsi:.1f}\n🎯 Target: +{target_perc:.2f}% Up\n📉 SL: -{target_perc/2:.2f}%"
+
+        if e20 < e50 and 30 < rsi < 60 and mv < sv:
+            return f"🔴 STRICT SELL {s} {tf}\nPrice: {price:.5f}\nRSI: {rsi:.1f}\n🎯 Target: -{target_perc:.2f}% Down\n📈 SL: +{target_perc/2:.2f}%"
+
     except Exception as e:
-        print(f"{sym} {tf} Error {e}", flush=True)
+        print(f"Err {s} {e}", flush=True)
+    print(f"{s} {tf} -> No Signal", flush=True)
     return None
 
-send_msg("✅ Strict Bot Started (65% Accuracy) - GOLD Added")
+send("✅ STRICT + TARGET BOT STARTED\nTarget % prediction ON")
 
 while True:
-    print(f"--- SCANNING {time.strftime('%H:%M:%S')} ---", flush=True)
     for tf in ["5m","15m"]:
         for s in SYMBOLS:
-            sig = check(s, tf)
-            if sig: send_msg(sig)
+            x = chk(s, tf)
+            if x: send(x)
             time.sleep(3)
     print("Sleeping 5 min...", flush=True)
     time.sleep(300)
