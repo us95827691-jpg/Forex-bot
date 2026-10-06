@@ -1,6 +1,4 @@
-flask
-requests
+Flask
 yfinance
-pandas
-python-telegram-bot
-ta
+requests
+curl_cffi
