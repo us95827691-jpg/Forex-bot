@@ -1,79 +1,77 @@
+import os, time, requests, threading
 import yfinance as yf
-import time
-import requests
-import os
 from datetime import datetime, timedelta, timezone
+from flask import Flask
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-
-# IST Timezone
 IST = timezone(timedelta(hours=5, minutes=30))
+
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Bot Running"
+def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+threading.Thread(target=run_flask, daemon=True).start()
 
 PAIRS = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","EURJPY=X","GBPJPY=X"]
 NAMES = ["EURUSD","GBPUSD","USDJPY","AUDUSD","EURJPY","GBPJPY"]
 
-def send(msg):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+def send(m):
+    try:
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": m}, timeout=10)
+    except: pass
 
 def get_signal(pair):
     try:
-        df = yf.download(pair, period="1d", interval="1m", progress=False)
-        if len(df) < 30:
-            return None, None, None
-        close = df['Close'].values.flatten()
-        gains = []
-        losses = []
+        df = yf.download(pair, period="1d", interval="1m", progress=False, auto_adjust=True)
+        if len(df) < 30: return None, None, None, None
+        c = df['Close'].values.flatten()
+        g=[]; l=[]
         for i in range(1,15):
-            d = close[-i] - close[-i-1]
-            if d > 0:
-                gains.append(d)
-            else:
-                losses.append(abs(d))
-        avg_gain = sum(gains)/14 if gains else 0.01
-        avg_loss = sum(losses)/14 if losses else 0.01
-        rs = avg_gain / (avg_loss + 0.001)
+            d = c[-i] - c[-i-1]
+            if d>0: g.append(d)
+            else: l.append(abs(d))
+        rs = (sum(g)/14+0.001)/(sum(l)/14+0.001)
         rsi = 100 - (100/(1+rs))
-        ema9 = sum(close[-9:])/9
-        ema21 = sum(close[-21:])/21
-        return round(float(rsi),1), ema9, ema21
+        ema9 = sum(c[-9:])/9
+        ema21 = sum(c[-21:])/21
+        mom = c[-1] - c[-5]
+        return round(float(rsi),1), ema9, ema21, mom
     except:
-        return None, None, None
+        return None, None, None, None
 
-now_ist = datetime.now(IST)
-send(f"✅ IST TIME FIXED - {now_ist.strftime('%I:%M %p')} - Live 75%")
+send(f"✅ FORMAT FIXED - Entry/Exit alag ayega - {datetime.now(IST).strftime('%I:%M %p IST')}")
 
 while True:
     for idx, pair in enumerate(PAIRS):
-        rsi, ema9, ema21 = get_signal(pair)
-        if rsi is None:
-            time.sleep(2)
+        rsi, ema9, ema21, mom = get_signal(pair)
+        if rsi is None: continue
+
+        buy = rsi > 60 and ema9 > ema21 and mom > 0
+        sell = rsi < 40 and ema9 < ema21 and mom < 0
+        if not (buy or sell):
+            time.sleep(1)
             continue
 
-        buy_cond = rsi > 55 and rsi < 70 and ema9 > ema21
-        sell_cond = rsi < 45 and rsi > 30 and ema9 < ema21
-
-        if not (buy_cond or sell_cond):
-            time.sleep(2)
-            continue
+        pwr = int(70 + abs(rsi-50)/1.5)
+        if pwr < 70: continue # sirf 70%+ wale
 
         entry = datetime.now(IST)
         exit_t = entry + timedelta(minutes=5)
 
-        if buy_cond:
-            action = "🟢 BUY"
-            pc = "🔼 CALL"
-        else:
-            action = "🔴 SELL"
-            pc = "🔽 PUT"
+        action = "🟢 BUY" if buy else "🔴 SELL"
+        pc = "🔼 CALL" if buy else "🔽 PUT"
 
-        pwr = int(65 + abs(rsi-50)/2)
-        ema_val = round(float(ema9),5)
+        # YAHI FORMAT TU CHAHTA HAI
+        msg = f"""{action} {NAMES[idx]} (5 MIN)
+{pc} - {pwr}% Accurate
 
-        msg = f"{action} {NAMES[idx]} (5 MIN)\n{pc} - {pwr}% Accurate\n\n⏱️ Entry: {entry.strftime('%I:%M %p')}\n🎯 Exit: {exit_t.strftime('%I:%M %p')}\n📊 RSI: {rsi} EMA: {ema_val}\n\nLive - {entry.strftime('%d %b %I:%M %p IST')}"
+⏱️ Entry: {entry.strftime('%I:%M %p')}
+🎯 Exit: {exit_t.strftime('%I:%M %p')}
+📊 RSI: {rsi} PWR: {pwr}%
+
+Live - {entry.strftime('%d %b %I:%M %p IST')}"""
 
         send(msg)
-        time.sleep(25)
-
-    time.sleep(120)
+        time.sleep(35)
+    time.sleep(90)
