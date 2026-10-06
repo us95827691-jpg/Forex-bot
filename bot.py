@@ -2,10 +2,13 @@ import yfinance as yf
 import time
 import requests
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
+# IST Timezone
+IST = timezone(timedelta(hours=5, minutes=30))
 
 PAIRS = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","EURJPY=X","GBPJPY=X"]
 NAMES = ["EURUSD","GBPUSD","USDJPY","AUDUSD","EURJPY","GBPJPY"]
@@ -38,7 +41,8 @@ def get_signal(pair):
     except:
         return None, None, None
 
-send("✅ ENTRY/EXIT BOT STARTED - Live 75% Accuracy - 06 Oct")
+now_ist = datetime.now(IST)
+send(f"✅ IST TIME FIXED - {now_ist.strftime('%I:%M %p')} - Live 75%")
 
 while True:
     for idx, pair in enumerate(PAIRS):
@@ -54,7 +58,7 @@ while True:
             time.sleep(2)
             continue
 
-        entry = datetime.now()
+        entry = datetime.now(IST)
         exit_t = entry + timedelta(minutes=5)
 
         if buy_cond:
@@ -67,7 +71,7 @@ while True:
         pwr = int(65 + abs(rsi-50)/2)
         ema_val = round(float(ema9),5)
 
-        msg = f"{action} {NAMES[idx]} (5 MIN)\n{pc} - {pwr}% Accurate\n\n⏱️ Entry: {entry.strftime('%I:%M %p')}\n🎯 Exit: {exit_t.strftime('%I:%M %p')}\n📊 RSI: {rsi} EMA: {ema_val}\n\nLive - {entry.strftime('%d %b %I:%M %p')}"
+        msg = f"{action} {NAMES[idx]} (5 MIN)\n{pc} - {pwr}% Accurate\n\n⏱️ Entry: {entry.strftime('%I:%M %p')}\n🎯 Exit: {exit_t.strftime('%I:%M %p')}\n📊 RSI: {rsi} EMA: {ema_val}\n\nLive - {entry.strftime('%d %b %I:%M %p IST')}"
 
         send(msg)
         time.sleep(25)
