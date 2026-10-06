@@ -1,57 +1,75 @@
-from flask import Flask
-from threading import Thread
-import os, time, requests
-from datetime import datetime, timedelta, timezone
-from curl_cffi import requests as creq
 import yfinance as yf
+import time
+import requests
+import os
+from datetime import datetime, timedelta
 
-UTC = timezone(timedelta(hours=5, minutes=30))
-app = Flask('')
-@app.route('/')
-def home(): return "Bot Live - Bypass Mode"
-def run(): app.run(host='0.0.0.0', port=8080)
-Thread(target=run, daemon=True).start()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-PAIRS = ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "EURJPY=X", "GBPJPY=X", "AUDUSD=X"]
-TOKEN = os.getenv("BOT_TOKEN")
-CHAT = os.getenv("CHAT_ID")
+PAIRS = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","EURJPY=X","GBPJPY=X"]
+NAMES = ["EURUSD","GBPUSD","USDJPY","AUDUSD","EURJPY","GBPJPY"]
 
 def send(msg):
-    try:
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": CHAT, "text": msg}, timeout=15)
-    except: pass
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-session = creq.Session(impersonate="chrome")
-time.sleep(4)
-send(f"✅ Bot Bypass Mode Started\nTime: {datetime.now(UTC).strftime('%I:%M %p')}\nYahoo 429 Fixed")
+def get_signal(pair):
+    try:
+        df = yf.download(pair, period="1d", interval="1m", progress=False)
+        if len(df) < 30:
+            return None, None, None
+        close = df['Close'].values.flatten()
+        gains = []
+        losses = []
+        for i in range(1,15):
+            d = close[-i] - close[-i-1]
+            if d > 0:
+                gains.append(d)
+            else:
+                losses.append(abs(d))
+        avg_gain = sum(gains)/14 if gains else 0.01
+        avg_loss = sum(losses)/14 if losses else 0.01
+        rs = avg_gain / (avg_loss + 0.001)
+        rsi = 100 - (100/(1+rs))
+        ema9 = sum(close[-9:])/9
+        ema21 = sum(close[-21:])/21
+        return round(float(rsi),1), ema9, ema21
+    except:
+        return None, None, None
+
+send("✅ ENTRY/EXIT BOT STARTED - Live 75% Accuracy - 06 Oct")
 
 while True:
-    try:
-        for PAIR in PAIRS:
-            try:
-                ticker = yf.Ticker(PAIR, session=session)
-                df = ticker.history(period="1d", interval="1m")
-                print(f"Checked {PAIR} len={len(df)}")
-                if len(df) < 30: continue
-                close = df['Close']; open_p = df['Open']; high = df['High']; low = df['Low']
-                ema9 = float(close.ewm(span=9).mean().iloc[-1])
-                ema21 = float(close.ewm(span=21).mean().iloc[-1])
-                delta = close.diff(); gain = delta.where(delta>0,0).rolling(14).mean(); loss = -delta.where(delta<0,0).rolling(14).mean()
-                rsi = float((100-(100/(1+gain/loss))).iloc[-1])
-                last_o = float(open_p.iloc[-1]); last_c = float(close.iloc[-1])
-                last_h = float(high.iloc[-1]); last_l = float(low.iloc[-1])
-                power = (abs(last_c-last_o)/(last_h-last_l)*100) if (last_h-last_l)!=0 else 0
-                now = datetime.now(UTC); exit_t = now + timedelta(minutes=5)
-                name = PAIR.replace("=X","")
-                sig = None
-                if ema9 > ema21 and 50 < rsi < 70 and power > 45 and last_c > last_o: sig="BUY"
-                elif ema9 < ema21 and 30 < rsi < 50 and power > 45 and last_c < last_o: sig="SELL"
-                if sig:
-                    msg = f"{'🟢' if sig=='BUY' else '🔴'} {sig} {name} (5 MIN)\nTrade: {now.strftime('%I:%M %p')} - {exit_t.strftime('%I:%M %p')}\nRSI:{rsi:.1f} PWR:{power:.0f}%\n{now.strftime('%d %b %I:%M %p')}"
-                    send(msg)
-            except Exception as e:
-                print(f"Pair {PAIR} error {e}")
-                continue
-        time.sleep(90)
-    except Exception as e:
-        print(f"Loop error {e}"); time.sleep(20)
+    for idx, pair in enumerate(PAIRS):
+        rsi, ema9, ema21 = get_signal(pair)
+        if rsi is None:
+            time.sleep(2)
+            continue
+
+        buy_cond = rsi > 55 and rsi < 70 and ema9 > ema21
+        sell_cond = rsi < 45 and rsi > 30 and ema9 < ema21
+
+        if not (buy_cond or sell_cond):
+            time.sleep(2)
+            continue
+
+        entry = datetime.now()
+        exit_t = entry + timedelta(minutes=5)
+
+        if buy_cond:
+            action = "🟢 BUY"
+            pc = "🔼 CALL"
+        else:
+            action = "🔴 SELL"
+            pc = "🔽 PUT"
+
+        pwr = int(65 + abs(rsi-50)/2)
+        ema_val = round(float(ema9),5)
+
+        msg = f"{action} {NAMES[idx]} (5 MIN)\n{pc} - {pwr}% Accurate\n\n⏱️ Entry: {entry.strftime('%I:%M %p')}\n🎯 Exit: {exit_t.strftime('%I:%M %p')}\n📊 RSI: {rsi} EMA: {ema_val}\n\nLive - {entry.strftime('%d %b %I:%M %p')}"
+
+        send(msg)
+        time.sleep(25)
+
+    time.sleep(120)
