@@ -72,7 +72,7 @@ def check_result_after_5min(pair, entry_price, is_buy, entry_t, name, pwr):
     except:
         send(f"⚠️ {name} {entry_t.strftime('%I:%M %p')} Result fail")
 
-send("✅ Final Bot Started - 85% + Memory Fix")
+send("✅ Bot Started - 87% Filter ON")
 
 while True:
     try:
@@ -85,7 +85,7 @@ while True:
             if not (buy or sell): continue
             pwr = int(75 + abs(rsi-50)/1.2)
             if rsi > 70 or rsi < 30: pwr += 5
-            if pwr < 82: continue
+            if pwr < 87: continue
             if pwr > 92: pwr = 92
             entry, exit_t = get_round_time()
             action = "🟢 BUY" if buy else "🔴 SELL"
